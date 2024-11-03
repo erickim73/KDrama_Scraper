@@ -59,6 +59,8 @@ try:
         if href and "/title/" in href:
             full_url = f"https://www.imdb.com{href}"
             kdrama_links.append(full_url)
+        # if len(kdrama_links) >= 5:  #Stop after collecting 5 links
+        #     break
 
     print(f"Total Kdrama links found: {len(kdrama_links)}")
 
@@ -100,6 +102,38 @@ try:
             duration = details_items[3].get_text(strip=True) if len(details_items) > 3 else "N/A"
         else:
             show_type = release_year = age_rating = duration = "N/A"
+        
+        episodes_header = detail_soup.find("div", {"data-testid": "episodes-header"})
+        episodes = episodes_header.find("span", class_="ipc-title__subtext").get_text(strip=True) if episodes_header else "N/A"
+        
+        # Extract number of seasons
+        seasons = "N/A"
+        # Check for different possible tags
+        season_span = detail_soup.find("span", class_="ipc-btn__text")  # Case: span tag
+        season_label = detail_soup.find("label", for_="browse-episodes-season")  # Case: label tag
+        season_select = detail_soup.find("select", id="browse-episodes-season")  # Case: select tag
+
+        if season_span and "Season" in season_span.get_text():
+            seasons = season_span.get_text().strip().split()[0]  # Extract the number before "Season"
+        elif season_label:
+            seasons = season_label.get_text().strip().split()[0]  # Extract the number before "seasons"
+        elif season_select:
+            seasons = season_select.get("aria-label", "N/A").split()[0]  # Extract number from aria-label
+            
+        # Extract number of years
+        years = "N/A"
+        years_select = detail_soup.find("select", id="browse-episodes-year")  # Main case: select tag
+
+        if years_select:
+            years = years_select.get("aria-label", "N/A").split()[0]  # Extract number from aria-label
+
+        # Compile the extracted data
+        kdrama_info = {
+            # Other fields remain unchanged
+            "Seasons": seasons,
+            "Years": years,
+            # Other fields remain unchanged
+        }
 
         rating_span = detail_soup.find("span", class_="sc-d541859f-1 imUuxf")
         rating = rating_span.get_text() if rating_span else "N/A"
@@ -125,38 +159,50 @@ try:
 
         streaming_services = detail_soup.find_all('div', class_='ipc-slate-card')
         services = []
-        allowed_services = ["Netflix", "Prime Video", "Roku Channel"]
+        allowed_services = ["Netflix", "Prime Video", "Roku Channel", "Hulu"]
 
         for service in streaming_services:
             streaming_link_tag = service.find('a', class_='ipc-lockup-overlay')
             if streaming_link_tag:
                 service_name = streaming_link_tag.get('aria-label', 'N/A')
                 service_link = streaming_link_tag['href'] if 'href' in streaming_link_tag.attrs else 'N/A'
+
+                # Only include allowed services
                 if any(allowed_service in service_name for allowed_service in allowed_services):
+                    # Parse the URL to remove query parameters if the service is Netflix or Prime Video
                     if "Netflix" in service_name or "Prime Video" in service_name:
                         parsed_url = urlparse(service_link)
-                        service_link = urlunparse(parsed_url._replace(query=""))
-                    if service_link.startswith("/"):
-                        service_link = f"https://www.amazon.com{service_link}" if "amazon.com" in service_link else f"https://www.netflix.com{service_link}"
-                    services.append((service_name, service_link))
+                        service_link = urlunparse(parsed_url._replace(query=""))  # Remove query parameters
 
-        kdrama_data.append({
-            "Link": kdrama_link,
+                    # Ensure the link is complete (add base URL if necessary)
+                    if service_link.startswith("/"):
+                        service_link = f"https://www.imdb.com{service_link}"
+
+                    services.append(f"{service_name} ({service_link})")
+
+        # Compile the Kdrama information
+        kdrama_info = {
             "Name": name,
             "Original Title": original_title,
             "Show Type": show_type,
             "Release Year": release_year,
             "Age Rating": age_rating,
             "Duration": duration,
+            "Episodes": episodes,
+            "Seasons": seasons,
+            "Years": years,
             "Rating": rating,
             "Number of Ratings": num_ratings,
             "Poster Link": poster_link,
             "Trailer Link": video_link,
-            "Genres": genres,
+            "Genres": ', '.join(genres),
             "Description": description,
-            "Stars": actor_names,
-            "Streaming Services": services if services else [],
-        })
+            "Stars": ', '.join(actor_names),
+            "Streaming Services": ', '.join(services)
+        }
+
+        # Append the Kdrama information to the data list
+        kdrama_data.append(kdrama_info)
 
     if kdrama_data:
         df = pd.DataFrame(kdrama_data)

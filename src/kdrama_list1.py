@@ -1,3 +1,4 @@
+# Import necessary libraries
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -38,7 +39,7 @@ try:
                 )
                 more_button_50.click()
                 WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//a[contains(@href, '/title/')]"))  # Wait for the new Kdrama elements to load
+                    EC.presence_of_element_located((By.XPATH, "//a[contains(@href, '/title/')]"))
                 )
 
                 # Attempt to click the "17 more" button if it exists
@@ -48,7 +49,7 @@ try:
                     )
                     more_button_17.click()
                     WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.XPATH, "//a[contains(@href, '/title/')]"))  # Wait for the new Kdrama elements to load
+                        EC.presence_of_element_located((By.XPATH, "//a[contains(@href, '/title/')]"))
                     )
                 except Exception:
                     break  # Exit if no more "17 more" button is found
@@ -69,11 +70,11 @@ try:
             full_url = f"https://www.imdb.com{href}"
             kdrama_links.append(full_url)
 
-    # Limit to only 3 Kdrama links for testing
-    kdrama_links = kdrama_links[:3]
+    # Limit to only 5 Kdrama links for testing
+    # kdrama_links = kdrama_links[:17]
 
     # Ensure the total number of Kdrama links is sufficient
-    print(f"Total Kdrama links found (limited to 3): {len(kdrama_links)}")
+    print(f"Total Kdrama links found (limited to 5): {len(kdrama_links)}")
 
     # Store results in a list
     kdrama_data = []
@@ -112,6 +113,40 @@ try:
         else:
             show_type = release_year = age_rating = duration = "N/A"
 
+        # Extract number of episodes
+        episodes_header = detail_soup.find("div", {"data-testid": "episodes-header"})
+        episodes = episodes_header.find("span", class_="ipc-title__subtext").get_text(strip=True) if episodes_header else "N/A"
+
+        # Extract number of seasons
+        seasons = "N/A"
+        # Check for different possible tags
+        season_span = detail_soup.find("span", class_="ipc-btn__text")  # Case: span tag
+        season_label = detail_soup.find("label", for_="browse-episodes-season")  # Case: label tag
+        season_select = detail_soup.find("select", id="browse-episodes-season")  # Case: select tag
+
+        if season_span and "Season" in season_span.get_text():
+            seasons = season_span.get_text().strip().split()[0]  # Extract the number before "Season"
+        elif season_label:
+            seasons = season_label.get_text().strip().split()[0]  # Extract the number before "seasons"
+        elif season_select:
+            seasons = season_select.get("aria-label", "N/A").split()[0]  # Extract number from aria-label
+
+        # Extract number of years
+        years = "N/A"
+        years_select = detail_soup.find("select", id="browse-episodes-year")  # Main case: select tag
+
+        if years_select:
+            years = years_select.get("aria-label", "N/A").split()[0]  # Extract number from aria-label
+
+        # Compile the extracted data
+        kdrama_info = {
+            # Other fields remain unchanged
+            "Seasons": seasons,
+            "Years": years,
+            # Other fields remain unchanged
+        }
+
+
         # Rating
         rating_span = detail_soup.find("span", class_="sc-d541859f-1 imUuxf")
         rating = rating_span.get_text() if rating_span else "N/A"
@@ -144,7 +179,7 @@ try:
         # Streaming services (only include Netflix, Prime Video, and Roku Channel)
         streaming_services = detail_soup.find_all('div', class_='ipc-slate-card')
         services = []
-        allowed_services = ["Netflix", "Prime Video", "Roku Channel"]
+        allowed_services = ["Netflix", "Prime Video", "Roku Channel", "Hulu"]
 
         for service in streaming_services:
             streaming_link_tag = service.find('a', class_='ipc-lockup-overlay')
@@ -161,58 +196,41 @@ try:
 
                     # Ensure the link is complete (add base URL if necessary)
                     if service_link.startswith("/"):
-                        service_link = f"https://www.amazon.com{service_link}" if "amazon.com" in service_link else f"https://www.netflix.com{service_link}"
+                        service_link = f"https://www.imdb.com{service_link}"
 
-                    services.append((service_name, service_link))
+                    services.append(f"{service_name} ({service_link})")
 
-        # Add data to list
-        kdrama_data.append({
-            "Link": kdrama_link,
+        # Compile the Kdrama information
+        kdrama_info = {
             "Name": name,
             "Original Title": original_title,
             "Show Type": show_type,
             "Release Year": release_year,
             "Age Rating": age_rating,
             "Duration": duration,
+            "Episodes": episodes,
+            "Seasons": seasons,
+            "Years": years,
             "Rating": rating,
             "Number of Ratings": num_ratings,
             "Poster Link": poster_link,
             "Trailer Link": video_link,
-            "Genres": genres,
+            "Genres": ', '.join(genres),
             "Description": description,
-            "Stars": actor_names,
-            "Streaming Services": services if services else [],
-        })
+            "Stars": ', '.join(actor_names),
+            "Streaming Services": ', '.join(services)
+        }
 
-    # Save the scraped data to a CSV file with UTF-8 encoding
-    df = pd.DataFrame(kdrama_data)
-    df.to_csv('kdramas.csv', index=False, encoding='utf-8')
-
-    # Print the scraped data (optional)
-    for kdrama in kdrama_data:
-        print(f"Kdrama URL: {kdrama['Link']}")
-        print(f"Name: {kdrama['Name']}")
-        print(f"Original Title: {kdrama['Original Title']}")
-        print(f"Show Type: {kdrama['Show Type']}")
-        print(f"Release Year: {kdrama['Release Year']}")
-        print(f"Age Rating: {kdrama['Age Rating']}")
-        print(f"Duration: {kdrama['Duration']}")
-        print(f"Rating: {kdrama['Rating']}")
-        print(f"Number of Ratings: {kdrama['Number of Ratings']}")
-        print(f"Poster Link: {kdrama['Poster Link']}")
-        print(f"Trailer Link: {kdrama['Trailer Link']}")
-        print(f"Genres: {kdrama['Genres']}")
-        print(f"Description: {kdrama['Description']}")
-        print(f"Stars: {kdrama['Stars']}")
-        if kdrama['Streaming Services']:
-            print("Streaming Services:")
-            for service_name, service_link in kdrama['Streaming Services']:
-                print(f"  - {service_name}: {service_link}")
-        else:
-            print("Streaming Services: None available")
-
-        print("\n" + "-"*50 + "\n")
+        # Append the Kdrama information to the data list
+        kdrama_data.append(kdrama_info)
 
 finally:
-    # Close the browser
+    # Close the webdriver
     driver.quit()
+
+# Save to DataFrame
+df = pd.DataFrame(kdrama_data)
+
+# Export to CSV
+df = pd.DataFrame(kdrama_data)
+df.to_csv('kdramas.csv', index=False)
