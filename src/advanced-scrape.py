@@ -1,18 +1,50 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
+import pandas as pd  # Import pandas to handle CSV creation
 import time
 
 # Initialize selenium webdriver with service
-driver_path = "C:\chromedriver.exe"
+driver_path = "C:\\chromedriver.exe"
 service = Service(driver_path)
 driver = webdriver.Chrome(service=service)
 
 # URL of the IMDb search page for Kdramas
 url = "https://www.imdb.com/search/title/?title_type=tv_series&release_date=2016-01-01,2024-12-31&user_rating=6.5,10&num_votes=500,&interests=in0000209&sort=user_rating,desc"
 driver.get(url)
-time.sleep(1)  # Wait for the page to load
+
+# Function to load more Kdramas by clicking pagination buttons
+def load_more_kdramas():
+    try:
+        while True:
+            # Attempt to click the "50 more" button
+            more_button_50 = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), '50 more')]/button"))
+            )
+            more_button_50.click()
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, "//a[contains(@href, '/title/')]"))  # Wait for the new Kdrama elements to load
+            )
+
+            # Attempt to click the "17 more" button if it exists
+            try:
+                more_button_17 = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), '17 more')]/button"))
+                )
+                more_button_17.click()
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//a[contains(@href, '/title/')]"))  # Wait for the new Kdrama elements to load
+                )
+            except Exception:
+                break  # Exit if no more "17 more" button is found
+    except Exception as e:
+        print(f"Error while loading Kdramas: {e}")
+
+# Load more Kdramas
+load_more_kdramas()
 
 # Parse the search results page
 soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -24,8 +56,9 @@ for link_tag in soup.find_all("a", class_="ipc-title-link-wrapper"):
     if href and "/title/" in href:
         full_url = f"https://www.imdb.com{href}"
         kdrama_links.append(full_url)
-    # if len(kdrama_links) >= 3:  # Limit to 3 Kdramas
-    #     break
+
+# Ensure the total number of Kdrama links is sufficient
+print(f"Total Kdrama links found: {len(kdrama_links)}")
 
 # Store results in a list
 kdrama_data = []
@@ -33,7 +66,7 @@ kdrama_data = []
 # Loop through each Kdrama link to extract details
 for kdrama_link in kdrama_links:
     driver.get(kdrama_link)
-    time.sleep(1)  # Wait 1 second for page to load
+    time.sleep(1)  # Wait 1 second for the page to load
 
     # Parse Kdrama detail page
     detail_soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -121,7 +154,11 @@ for kdrama_link in kdrama_links:
         "Streaming Services": services if services else [],
     })
 
-# Print the scraped data
+# Save the scraped data to a CSV file
+df = pd.DataFrame(kdrama_data)
+df.to_csv('kdramas.csv', index=False)
+
+# Print the scraped data (optional)
 for kdrama in kdrama_data:
     print(f"Kdrama URL: {kdrama['Link']}")
     print(f"Name: {kdrama['Name']}")
@@ -137,7 +174,6 @@ for kdrama in kdrama_data:
     print(f"Genres: {kdrama['Genres']}")
     print(f"Description: {kdrama['Description']}")
     print(f"Stars: {kdrama['Stars']}")
-    
     if kdrama['Streaming Services']:
         print("Streaming Services:")
         for service_name, service_link in kdrama['Streaming Services']:
@@ -145,7 +181,7 @@ for kdrama in kdrama_data:
     else:
         print("Streaming Services: None available")
     
-    print("=" * 80)
+    print("=" * 40)
 
 # Close the browser
 driver.quit()
