@@ -8,6 +8,8 @@ import pandas as pd
 import time
 from urllib.parse import urlparse, urlunparse
 import os
+import requests
+
 
 # Function to clean release year
 def clean_release_year(release_year):
@@ -16,6 +18,19 @@ def clean_release_year(release_year):
     release_year = release_year.replace("â€“", "-").replace("–", "-")
     release_year = release_year.strip("-").strip()
     return release_year
+
+# Function to scrape image URL from IMDb page
+def scrape_image_url(kdrama_link):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    }
+    response = requests.get(kdrama_link, headers=headers)
+    if response.status_code == 200:
+        detail_soup = BeautifulSoup(response.content, 'html.parser')
+        og_image = detail_soup.find('meta', property='og:image')
+        if og_image and 'content' in og_image.attrs:
+            return og_image['content']
+    return "N/A"
 
 # Initialize selenium webdriver with service
 driver_path = "C:\\chromedriver.exe"  # Update this path if necessary
@@ -135,31 +150,41 @@ try:
             # Other fields remain unchanged
         }
 
+        #rating
         rating_span = detail_soup.find("span", class_="sc-d541859f-1 imUuxf")
         rating = rating_span.get_text() if rating_span else "N/A"
 
+        #number of ratings
         num_ratings_div = detail_soup.find("div", class_="sc-d541859f-3 dwhNqC")
         num_ratings = num_ratings_div.get_text().replace(",", "") if num_ratings_div else "N/A"
 
-        poster_link_tag = detail_soup.find('a', class_='ipc-lockup-overlay ipc-focusable')
-        poster_link = 'https://www.imdb.com' + poster_link_tag['href'] if poster_link_tag and 'href' in poster_link_tag.attrs else "N/A"
-
+        # Link to poster (scraping from og:image)
+        poster_link = scrape_image_url(kdrama_link)
+        
+        #link to trailer video
         video_tag = detail_soup.find('video', class_='jw-video jw-reset')
         video_link = video_tag['src'] if video_tag and 'src' in video_tag.attrs else "N/A"
 
+        #genre
         chip_links = detail_soup.find_all('a', class_='ipc-chip ipc-chip--on-baseAlt')
         genres = [chip.get_text(strip=True) for chip in chip_links]
 
+        # description
         description_tag = detail_soup.find('span', {'data-testid': 'plot-l'})
         description = description_tag.get_text(strip=True) if description_tag else "N/A"
 
+        #stars
         actor_links = detail_soup.find_all('a', class_='ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link')
         actor_names = list(dict.fromkeys([actor.get_text(strip=True) for actor in actor_links]))
         actor_names = actor_names[:3]
 
+        # Streaming services
         streaming_services = detail_soup.find_all('div', class_='ipc-slate-card')
         services = []
-        allowed_services = ["Netflix", "Prime Video", "Roku Channel", "Hulu"]
+        allowed_services = [
+            "Netflix", "Prime Video", "The Roku Channel", "Hulu", "Tubi", 
+            "Freevee", "Paramount+", "Best TV Ever"
+        ]
 
         for service in streaming_services:
             streaming_link_tag = service.find('a', class_='ipc-lockup-overlay')
@@ -167,18 +192,23 @@ try:
                 service_name = streaming_link_tag.get('aria-label', 'N/A')
                 service_link = streaming_link_tag['href'] if 'href' in streaming_link_tag.attrs else 'N/A'
 
-                # Only include allowed services
+                # Include only allowed services
                 if any(allowed_service in service_name for allowed_service in allowed_services):
-                    # Parse the URL to remove query parameters if the service is Netflix or Prime Video
+                    # Parse the URL to remove query parameters for Netflix and Prime Video
                     if "Netflix" in service_name or "Prime Video" in service_name:
                         parsed_url = urlparse(service_link)
-                        service_link = urlunparse(parsed_url._replace(query=""))  # Remove query parameters
+                        service_link = urlunparse(parsed_url._replace(query=""))
 
                     # Ensure the link is complete (add base URL if necessary)
                     if service_link.startswith("/"):
                         service_link = f"https://www.imdb.com{service_link}"
 
+                    # Add the service with its link to the list
                     services.append(f"{service_name} ({service_link})")
+        
+        # If no streaming services were found, set it to "N/A"
+        if not services:
+            services.append("N/A")
 
         # Compile the Kdrama information
         kdrama_info = {
